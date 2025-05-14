@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Underwater World</title>
+    <script src="https://cdn.jsdelivr.net/npm/p5@1.8.0/lib/p5.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #000;
+        }
+        #canvas-container {
+            width: 100%;
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: center;
+            position: relative;
+        }
+    </style>
+
+<base target="_self">
+
+
+    <div id="canvas-container"></div>
+
+    <script>
+        const sketch = (p) => {
+            // Fish school parameters
+            let fish = [];
+            let bubbles = [];
+            let treasures = [];
+            let food = [];
+            let leaderFish;
+            let predator = null;
+            let predatorActive = false;
+            let lastTreasureSpawn = 0;
+            let lastFoodSpawn = 0;
+            let currentEffect = null;
+            let effectStartTime = 0;
+            let coral = [];
+            let seaweed = [];
+            let currentColorMode = 'normal';
+            let exoticSpeciesUnlocked = 0;
+            
+            // Color palettes
+            const fishColors = [
+                p.color(255, 100, 100),
+                p.color(100, 255, 100),
+                p.color(100, 100, 255),
+                p.color(255, 255, 100),
+                p.color(255, 100, 255)
+            ];
+            
+            const exoticColors = [
+                p.color(255, 215, 0), // gold
+                p.color(138, 43, 226), // purple
+                p.color(0, 255, 255) // cyan
+            ];
+            
+            p.setup = () => {
+                let canvas = p.createCanvas(p.min(p.windowWidth, 1200), p.min(p.windowHeight, 800));
+                canvas.parent('canvas-container');
+                p.colorMode(p.HSB, 360, 100, 100, 1);
+                
+                // Create initial fish school
+                for (let i = 0; i < 30; i++) {
+                    fish.push(createFish(p.random(p.width), p.random(p.height)));
+                }
+                
+                // Create leader fish
+                leaderFish = {
+                    x: p.width/2,
+                    y: p.height/2,
+                    size: 20,
+                    color: p.color(255, 255, 255),
+                    targetX: p.width/2,
+                    targetY: p.height/2,
+                    speed: 5,
+                    tailAngle: 0,
+                    tailSpeed: 0.1
+                };
+                
+                // Create coral and seaweed
+                for (let i = 0; i < 15; i++) {
+                    coral.push({
+                        x: p.random(p.width),
+                        y: p.random(p.height),
+                        size: p.random(20, 50),
+                        color: p.color(10, 80, 80)
+                    });
+                    
+                    seaweed.push({
+                        x: p.random(p.width),
+                        y: p.height,
+                        height: p.random(50, 150),
+                        width: p.random(5, 15),
+                        sway: p.random(0.01, 0.05),
+                        angle: p.random(p.TWO_PI),
+                        color: p.color(120, 80, 60)
+                    });
+                }
+                
+                // Spawn first treasure
+                spawnTreasure();
+            };
+            
+            p.draw = () => {
+                // Underwater gradient background
+                drawBackground();
+                
+                // Draw bubbles
+                drawBubbles();
+                
+                // Draw coral and seaweed
+                drawEnvironment();
+                
+                // Draw treasures
+                drawTreasures();
+                
+                // Draw food
+                drawFood();
+                
+                // Draw predator if active
+                if (predatorActive && predator) {
+                    drawPredator();
+                }
+                
+                // Update and draw fish
+                updateFish();
+                
+                // Update and draw leader fish
+                updateLeaderFish();
+                
+                // Handle current effect
+                handleEffects();
+                
+                // Spawn new treasures occasionally
+                if (p.millis() - lastTreasureSpawn > 15000 && treasures.length < 3) {
+                    spawnTreasure();
+                }
+                
+                // Spawn food if UP arrow is held
+                if (p.keyIsDown(p.UP_ARROW)) {
+                    if (p.millis() - lastFoodSpawn > 300) {
+                        spawnFood();
+                        lastFoodSpawn = p.millis();
+                    }
+                }
+                
+                // Apply currents if LEFT/RIGHT arrows are pressed
+                if (p.keyIsDown(p.LEFT_ARROW)) {
+                    applyCurrent(-1, 0);
+                }
+                if (p.keyIsDown(p.RIGHT_ARROW)) {
+                    applyCurrent(1, 0);
+                }
+            };
+            
+            function drawBackground() {
+                // Underwater gradient
+                for (let y = 0; y < p.height; y++) {
+                    let inter = p.map(y, 0, p.height, 0, 1);
+                    let c = p.lerpColor(p.color(200, 70, 30), p.color(230, 80, 10), inter);
+                    p.stroke(c);
+                    p.line(0, y, p.width, y);
+                }
+                
+                // Light rays
+                p.noStroke();
+                for (let i = 0; i < 5; i++) {
+                    let x = p.width * i / 5;
+                    let alpha = p.map(p.sin(p.frameCount * 0.01 + i), -1, 1, 10, 30);
+                    p.fill(50, 10, 100, alpha/100);
+                    p.beginShape();
+                    p.vertex(x, 0);
+                    p.vertex(x + 50, 0);
+                    p.vertex(x + 150, p.height);
+                    p.vertex(x - 50, p.height);
+                    p.endShape(p.CLOSE);
+                }
+            }
+            
+            function drawBubbles() {
+                // Add new bubbles randomly
+                if (p.random() < 0.05) {
+                    bubbles.push({
+                        x: p.random(p.width),
+                        y: p.height + 10,
+                        size: p.random(5, 15),
+                        speed: p.random(1, 3),
+                        wobble: p.random(0.1, 0.3)
+                    });
+                }
+                
+                // Update and draw bubbles
+                p.noStroke();
+                p.fill(180, 30, 100, 0.6);
+                for (let i = bubbles.length - 1; i >= 0; i--) {
+                    let b = bubbles[i];
+                    b.y -= b.speed;
+                    b.x += p.sin(p.frameCount * b.wobble) * 0.5;
+                    
+                    p.ellipse(b.x, b.y, b.size);
+                    
+                    // Remove bubbles that go off screen
+                    if (b.y < -10) {
+                        bubbles.splice(i, 1);
+                    }
+                }
+            }
+            
+            function drawEnvironment() {
+                // Draw coral
+                for (let c of coral) {
+                    p.fill(c.color);
+                    p.noStroke();
+                    p.ellipse(c.x, c.y, c.size, c.size * 0.7);
+                }
+                
+                // Draw seaweed
+                for (let s of seaweed) {
+                    p.push();
+                    p.translate(s.x, s.y);
+                    p.rotate(s.angle);
+                    p.fill(s.color);
+                    p.noStroke();
+                    p.beginShape();
+                    p.vertex(0, 0);
+                    p.vertex(s.width, 0);
+                    p.vertex(s.width/2, -s.height);
+                    p.endShape(p.CLOSE);
+                    p.pop();
+                    
+                    s.angle += p.sin(p.frameCount * s.sway) * 0.02;
+                }
+            }
+            
+            function createFish(x, y, isExotic = false) {
+                let size = p.random(10, 20);
+                let baseColor;
+                
+                if (isExotic) {
+                    baseColor = exoticColors[p.floor(p.random(exoticColors.length))];
+                } else {
+                    baseColor = fishColors[p.floor(p.random(fishColors.length))];
+                }
+                
+                return {
+                    x: x,
+                    y: y,
+                    size: size,
+                    color: baseColor,
+                    speed: p.random(1, 3),
+                    direction: p.random(p.TWO_PI),
+                    targetDirection: p.random(p.TWO_PI),
+                    directionChangeTimer: 0,
+                    tailAngle: 0,
+                    tailSpeed: p.random(0.05, 0.2),
+                    originalColor: baseColor,
+                    isExotic: isExotic,
+                    foodEaten: 0
+                };
+            }
+            
+            function updateFish() {
+                for (let f of fish) {
+                    // Change direction occasionally
+                    f.directionChangeTimer--;
+                    if (f.directionChangeTimer <= 0) {
+                        f.targetDirection = p.random(p.TWO_PI);
+                        f.directionChangeTimer = p.random(30, 120);
+                    }
+                    
+                    // Smoothly adjust direction
+                    f.direction = p.lerp(f.direction, f.targetDirection, 0.05);
+                    
+                    // Avoid predator
+                    if (predatorActive && predator) {
+                        let distToPredator = p.dist(f.x, f.y, predator.x, predator.y);
+                        if (distToPredator < 200) {
+                            let angleAway = p.atan2(f.y - predator.y, f.x - predator.x);
+                            f.targetDirection = angleAway;
+                            f.speed = p.map(distToPredator, 0, 200, 8, 3, true);
+                        } else {
+                            f.speed = p.map(f.speed, 0, 8, 1, 3, true);
+                        }
+                    }
+                    
+                    // Move toward food if nearby
+                    for (let foodItem of food) {
+                        let distToFood = p.dist(f.x, f.y, foodItem.x, foodItem.y);
+                        if (distToFood < 100) {
+                            f.targetDirection = p.atan2(foodItem.y - f.y, foodItem.x - f.x);
+                            f.speed = p.map(distToFood, 0, 100, 5, 3, true);
+                            
+                            // Eat food if close enough
+                            if (distToFood < f.size/2 + foodItem.size/2) {
+                                food.splice(food.indexOf(foodItem), 1);
+                                f.foodEaten++;
+                                
+                                // Grow slightly when eating
+                                f.size = p.min(f.size * 1.02, 25);
+                                
+                                // Unlock exotic species after enough food
+                                if (f.foodEaten > 5 && !f.isExotic && exoticSpeciesUnlocked < exoticColors.length) {
+                                    f.isExotic = true;
+                                    f.originalColor = exoticColors[exoticSpeciesUnlocked];
+                                    exoticSpeciesUnlocked++;
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // Avoid obstacles
+                    for (let c of coral) {
+                        let distToCoral = p.dist(f.x, f.y, c.x, c.y);
+                        if (distToCoral < f.size/2 + c.size/2) {
+                            let angleAway = p.atan2(f.y - c.y, f.x - c.x);
+                            f.direction = angleAway;
+                            f.x += p.cos(angleAway) * 2;
+                            f.y += p.sin(angleAway) * 2;
+                        }
+                    }
+                    
+                    // Move fish
+                    f.x += p.cos(f.direction) * f.speed;
+                    f.y += p.sin(f.direction) * f.speed;
+                    
+                    // Wrap around screen edges
+                    if (f.x < -f.size) f.x = p.width + f.size;
+                    if (f.x > p.width + f.size) f.x = -f.size;
+                    if (f.y < -f.size) f.y = p.height + f.size;
+                    if (f.y > p.height + f.size) f.y = -f.size;
+                    
+                    // Update tail animation
+                    f.tailAngle += f.tailSpeed;
+                    
+                    // Draw fish
+                    drawFish(f);
+                }
+            }
+            
+            function drawFish(f) {
+                p.push();
+                p.translate(f.x, f.y);
+                p.rotate(f.direction);
+                
+                // Apply color effects
+                let displayColor = f.originalColor;
+                if (currentEffect === 'rainbow') {
+                    let hue = (p.frameCount * 2 + f.x + f.y) % 360;
+                    displayColor = p.color(hue, 80, 80);
+                }
+                
+                p.fill(displayColor);
+                p.noStroke();
+                
+                // Body
+                p.ellipse(0, 0, f.size, f.size/2);
+                
+                // Tail
+                p.push();
+                p.translate(-f.size/3, 0);
+                p.rotate(p.sin(f.tailAngle) * 0.5);
+                p.triangle(0, 0, -f.size/2, -f.size/3, -f.size/2, f.size/3);
+                p.pop();
+                
+                // Eye
+                p.fill(0);
+                p.ellipse(f.size/4, -f.size/8, f.size/8);
+                
+                p.pop();
+            }
+            
+            function updateLeaderFish() {
+                // Move toward target
+                let dx = leaderFish.targetX - leaderFish.x;
+                let dy = leaderFish.targetY - leaderFish.y;
+                let dist = p.sqrt(dx*dx + dy*dy);
+                
+                if (dist > 5) {
+                    leaderFish.x += (dx / dist) * leaderFish.speed;
+                    leaderFish.y += (dy / dist) * leaderFish.speed;
+                }
+                
+                // Update tail animation
+                leaderFish.tailAngle += leaderFish.tailSpeed;
+                
+                // Draw leader fish
+                p.push();
+                p.translate(leaderFish.x, leaderFish.y);
+                p.rotate(p.atan2(dy, dx));
+                
+                p.fill(leaderFish.color);
+                p.noStroke();
+                
+                // Body
+                p.ellipse(0, 0, leaderFish.size, leaderFish.size/2);
+                
+                // Tail
+                p.push();
+                p.translate(-leaderFish.size/3, 0);
+                p.rotate(p.sin(leaderFish.tailAngle) * 0.5);
+                p.triangle(0, 0, -leaderFish.size/2, -leaderFish.size/3, -leaderFish.size/2, leaderFish.size/3);
+                p.pop();
+                
+                // Crown
+                p.fill(255, 215, 0);
+                p.triangle(leaderFish.size/3, -leaderFish.size/3, 
+                          leaderFish.size/2, -leaderFish.size/2, 
+                          leaderFish.size/3, -leaderFish.size/4);
+                
+                // Eye
+                p.fill(0);
+                p.ellipse(leaderFish.size/4, -leaderFish.size/8, leaderFish.size/8);
+                
+                p.pop();
+                
+                // Check for treasure collision
+                for (let i = treasures.length - 1; i >= 0; i--) {
+                    let t = treasures[i];
+                    let dist = p.dist(leaderFish.x, leaderFish.y, t.x, t.y);
+                    if (dist < leaderFish.size/2 + t.size/2) {
+                        // Treasure found!
+                        treasures.splice(i, 1);
+                        currentEffect = 'goldfish';
+                        effectStartTime = p.millis();
+                        
+                        // Spawn golden fish
+                        for (let j = 0; j < 3; j++) {
+                            fish.push(createFish(t.x, t.y, true));
+                        }
+                        
+                        // Bubble burst effect
+                        for (let j = 0; j < 30; j++) {
+                            bubbles.push({
+                                x: t.x,
+                                y: t.y,
+                                size: p.random(5, 20),
+                                speed: p.random(2, 6),
+                                wobble: p.random(0.1, 0.5)
+                            });
+                        }
+                    }
+                }
+            }
+            
+            function spawnTreasure() {
+                treasures.push({
+                    x: p.random(100, p.width-100),
+                    y: p.random(100, p.height-100),
+                    size: 30,
+                    rotation: 0,
+                    rotationSpeed: p.random(0.01, 0.03)
+                });
+                lastTreasureSpawn = p.millis();
+            }
+            
+            function drawTreasures() {
+                for (let t of treasures) {
+                    p.push();
+                    p.translate(t.x, t.y);
+                    p.rotate(t.rotation);
+                    t.rotation += t.rotationSpeed;
+                    
+                    // Treasure chest
+                    p.fill(139, 69, 19);
+                    p.rect(-t.size/2, -t.size/3, t.size, t.size/1.5);
+                    
+                    // Lid
+                    p.fill(160, 80, 40);
+                    p.arc(0, -t.size/3, t.size, t.size/2, p.PI, 0, p.CHORD);
+                    
+                    // Gold inside
+                    p.fill(255, 215, 0);
+                    p.rect(-t.size/3, -t.size/4, t.size/1.5, t.size/6);
+                    
+                    // Glow effect
+                    if (p.sin(p.frameCount * 0.1) > 0.8) {
+                        p.fill(255, 215, 0, 0.3);
+                        p.ellipse(0, 0, t.size * 1.5);
+                    }
+                    
+                    p.pop();
+                }
+            }
+            
+            function spawnFood() {
+                food.push({
+                    x: p.random(p.width),
+                    y: 0,
+                    size: p.random(5, 10),
+                    speed: p.random(1, 2)
+                });
+            }
+            
+            function drawFood() {
+                p.noStroke();
+                for (let i = food.length - 1; i >= 0; i--) {
+                    let f = food[i];
+                    f.y += f.speed;
+                    
+                    p.fill(40, 100, 100);
+                    p.ellipse(f.x, f.y, f.size);
+                    
+                    // Remove food that falls off screen
+                    if (f.y > p.height + 10) {
+                        food.splice(i, 1);
+                    }
+                }
+            }
+            
+            function applyCurrent(xDir, yDir) {
+                for (let f of fish) {
+                    f.x += xDir * 2;
+                    f.y += yDir * 2;
+                    
+                    // Create bubble trail
+                    if (p.random() < 0.1) {
+                        bubbles.push({
+                            x: f.x,
+                            y: f.y,
+                            size: p.random(3, 8),
+                            speed: p.random(1, 2),
+                            wobble: p.random(0.1, 0.3)
+                        });
+                    }
+                }
+            }
+            
+            function activatePredator() {
+                predatorActive = !predatorActive;
+                
+                if (predatorActive) {
+                    predator = {
+                        x: -100,
+                        y: p.random(p.height),
+                        size: 50,
+                        speed: 4,
+                        direction: 0,
+                        tailAngle: 0,
+                        tailSpeed: 0.2
+                    };
+                }
+            }
+            
+            function drawPredator() {
+                if (!predator) return;
+                
+                // Move predator
+                predator.x += predator.speed;
+                predator.tailAngle += predator.tailSpeed;
+                
+                // Remove if off screen
+                if (predator.x > p.width + 100) {
+                    predatorActive = false;
+                    predator = null;
+                    return;
+                }
+                
+                // Draw predator
+                p.push();
+                p.translate(predator.x, predator.y);
+                
+                p.fill(40, 100, 50);
+                p.noStroke();
+                
+                // Body
+                p.ellipse(0, 0, predator.size, predator.size/1.5);
+                
+                // Tail
+                p.push();
+                p.translate(-predator.size/2, 0);
+                p.rotate(p.sin(predator.tailAngle) * 0.3);
+                p.triangle(0, 0, -predator.size, -predator.size/3, -predator.size, predator.size/3);
+                p.pop();
+                
+                // Fin
+                p.triangle(predator.size/3, -predator.size/4, 
+                          predator.size/2, -predator.size/2, 
+                          predator.size, -predator.size/4);
+                
+                // Eye
+                p.fill(0);
+                p.ellipse(predator.size/4, -predator.size/8, predator.size/8);
+                
+                // Teeth
+                p.fill(255);
+                for (let i = 0; i < 5; i++) {
+                    let x = predator.size/3 + i * 5;
+                    p.triangle(x, predator.size/6, x+3, predator.size/6, x+1.5, predator.size/4);
+                }
+                
+                p.pop();
+            }
+            
+            function handleEffects() {
+                if (!currentEffect) return;
+                
+                // Rainbow effect
+                if (currentEffect === 'rainbow') {
+                    if (p.millis() - effectStartTime > 3000) {
+                        currentEffect = null;
+                        // Reset fish colors
+                        for (let f of fish) {
+                            f.color = f.originalColor;
+                        }
+                    }
+                }
+                
+                // Goldfish effect (already handled in treasure collision)
+                if (currentEffect === 'goldfish' && p.millis() - effectStartTime > 5000) {
+                    currentEffect = null;
+                }
+            }
+            
+            p.mousePressed = () => {
+                // Set leader fish target
+                leaderFish.targetX = p.mouseX;
+                leaderFish.targetY = p.mouseY;
+                
+                // Bubble click effect
+                for (let i = 0; i < 10; i++) {
+                    bubbles.push({
+                        x: p.mouseX,
+                        y: p.mouseY,
+                        size: p.random(5, 15),
+                        speed: p.random(2, 4),
+                        wobble: p.random(0.1, 0.3)
+                    });
+                }
+            };
+            
+            p.keyPressed = () => {
+                // Spacebar for rainbow effect
+                if (p.key === ' ') {
+                    currentEffect = 'rainbow';
+                    effectStartTime = p.millis();
+                    
+                    // Change all fish colors temporarily
+                    for (let f of fish) {
+                        let hue = (p.frameCount * 2 + f.x + f.y) % 360;
+                        f.color = p.color(hue, 80, 80);
+                    }
+                }
+                
+                // Down arrow for predator
+                if (p.keyCode === p.DOWN_ARROW) {
+                    activatePredator();
+                }
+            };
+            
+            p.windowResized = () => {
+                p.resizeCanvas(p.min(p.windowWidth, 1200), p.min(p.windowHeight, 800));
+            };
+        };
+
+        new p5(sketch);
+    </script>
+
+              
+          
+                
+          
+              
